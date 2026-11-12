@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="sl-SI">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Otroška premedikacija</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; margin: 20px; background: #fff; color: #222; }
+  h3 { margin-top: 0; }
+  .container { max-width: 700px; }
+  .ucinkovine label { font-size: 18px; cursor: pointer; }
+  .ucinkovine input { transform: scale(1.3); margin: 6px 8px 6px 2px; cursor: pointer; }
+  #tezaPremedikacijaId { font-size: 20px; padding: 5px; margin: 5px; width: 90px;
+    box-sizing: border-box; border: 3px solid #ccc; outline: none; }
+  #tezaPremedikacijaId:focus { border-color: #4CAF50; }
+  #faktorId { font-size: 30px; }
+  #sprememba { width: 60%; }
+  .prikaz { font-size: 20px; border: 3px solid #ccc; border-radius: 5px; width: 100%;
+    min-height: 26px; padding: 5px; box-sizing: border-box; }
+  .napaka { color: #b00020; font-weight: bold; min-height: 22px; margin: 8px 0; }
+  .oznaka { margin-top: 14px; }
+  footer { margin-top: 30px; font-size: 12px; color: #777; }
+</style>
+</head>
+<body>
+
+<script>
+/* ==================================================================
+   PODATKI – kopija tabele premedikacija1Tbl
+   ------------------------------------------------------------------
+   Pravilo izbire (enako kot v kardiosi): za izbrano učinkovino se
+   vzame vrstica z NAJVEČJO "teza", ki je <= vnesena teža × faktor.
+   doza = na kg, koncentracija = v enoti doze na ml
+   (midazolam, ketamin: mg/kg in mg/ml; dexmedetomidin: mcg/kg in mcg/ml).
+   Podatke spremeniš tukaj (shrani datoteko in osveži stran).
+   ================================================================== */
+const PREMEDIKACIJA = [
+  { id: 1, ucinkovina: "midazolam",      teza: 1,  doza: 0.5, koncentracija: 1.5,  navodila: "Midazolam sirup 1,5 mg/ml" },
+  { id: 2, ucinkovina: "dexmedetomidin", teza: 1,  doza: 3.0, koncentracija: 10.0, navodila: "10 mcg/ml (1 ml originalnega zdravila dexmedetomidin 100 mcg/ml razredčimo z 9 ml 0,9% NaCl)" },
+  { id: 3, ucinkovina: "dexmedetomidin", teza: 5,  doza: 3.0, koncentracija: 50.0, navodila: "50 mcg/ml (1 ml originalnega zdravila dexmedetomidin 100 mcg/ml razredčimo z 1 ml 0,9% NaCl)" },
+  { id: 4, ucinkovina: "dexmedetomidin", teza: 20, doza: 3.0, koncentracija: 100.0, navodila: "100 mcg/ml (originalnega zdravila dexmedetomidin 100 mcg/ml ni potrebno redčiti)" },
+  { id: 5, ucinkovina: "ketamin",        teza: 1,  doza: 5.0, koncentracija: 25.0, navodila: "raztopina za injekcije 25mg/ml" }
+];
+</script>
+
+<div class="container">
+  <h3>Otroška premedikacija</h3>
+
+  <div class="ucinkovine">
+    <input type="radio" id="midazolamId" name="ucinkovina" value="midazolam"><label for="midazolamId">midazolam</label><br>
+    <input type="radio" id="dexmedetomidinId" name="ucinkovina" value="dexmedetomidin"><label for="dexmedetomidinId">dexmedetomidin</label><br>
+    <input type="radio" id="ketaminId" name="ucinkovina" value="ketamin"><label for="ketaminId">ketamin</label><br>
+  </div>
+
+  <label for="tezaPremedikacijaId"><b>Teža: </b></label>
+  <input id="tezaPremedikacijaId" type="text" inputmode="decimal" value="2" maxlength="5"> kg
+  <br>
+  <label for="sprememba">Sprememba doze: <span id="faktorId">1</span></label><br>
+  <input type="range" id="sprememba" min="0.5" max="2" step="0.1" value="1" list="tickmarks">
+  <datalist id="tickmarks">
+    <option value="0.5"></option><option value="1"></option>
+    <option value="1.5"></option><option value="2"></option>
+  </datalist>
+
+  <div id="napaka" class="napaka"></div>
+
+  <div class="oznaka">uporabljeno zdravilo:</div>
+  <div id="navodila" class="prikaz"></div>
+  <div class="oznaka">aplikacija:</div>
+  <div id="premedPredOp" class="prikaz"></div>
+
+  <footer>Samostojna različica kalkulatorja iz kardiosi – deluje brez strežnika in brez interneta.</footer>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const slider = $("sprememba");
+
+  // izpis števila podobno kot PHP (brez napak plavajoče vejice, npr. 7.5 namesto 7.500000001)
+  const st = x => String(parseFloat(x.toPrecision(12)));
+  const round1 = x => Math.round((x + Number.EPSILON) * 10) / 10;
+
+  function izberi(ucinkovina, teza) {
+    // ekvivalent: WHERE teza <= ? AND ucinkovina = ? ORDER BY teza DESC LIMIT 1
+    const kandidati = PREMEDIKACIJA
+      .filter(r => r.ucinkovina === ucinkovina && r.teza <= teza)
+      .sort((a, b) => b.teza - a.teza);
+    return kandidati[0] || null;
+  }
+
+  function izracun() {
+    $("faktorId").textContent = slider.value;
+    const izbrana = document.querySelector("input[name=ucinkovina]:checked");
+    if (!izbrana) return;
+    const ucinkovina = izbrana.value;
+    const tezaVnos = parseFloat(String($("tezaPremedikacijaId").value).replace(",", "."));
+    const faktor = parseFloat(slider.value);
+    $("napaka").textContent = "";
+
+    if (!isFinite(tezaVnos) || tezaVnos <= 0) {
+      $("napaka").textContent = "Vnesi veljavno težo.";
+      $("navodila").textContent = ""; $("premedPredOp").textContent = "";
+      return;
+    }
+    const teza = tezaVnos * faktor;
+    const v = izberi(ucinkovina, teza);
+    if (!v || (ucinkovina === "ketamin" && !(v.koncentracija > 0))) {
+      $("napaka").textContent = "za to težo ni navodil";
+      $("navodila").textContent = ""; $("premedPredOp").textContent = "";
+      return;
+    }
+
+    const dozaMg = v.doza * teza;
+    const dozaMl = round1(dozaMg / v.koncentracija);
+    let premedikacija, navodila;
+
+    if (ucinkovina === "midazolam") {
+      premedikacija = `Midazolam ${st(dozaMg)} mg to je ${st(dozaMl)} ml`;
+      navodila = `${v.navodila} oralno`;
+    } else if (ucinkovina === "dexmedetomidin") {
+      premedikacija = `Dexmedetomidin ${st(dozaMg)} mcg to je ${st(dozaMl)} ml` +
+        (dozaMl >= 0.6 ? " razpodelimo v obe nosnici" : "");
+      navodila = `${v.navodila} nasalno`;
+    } else if (ucinkovina === "ketamin") {
+      premedikacija = `Ketamin ${st(dozaMg)} mg to je ${st(dozaMl)} ml`;
+      navodila = `${v.navodila} oralno`;
+    }
+    $("navodila").textContent = navodila;
+    $("premedPredOp").textContent = premedikacija;
+  }
+
+  document.querySelectorAll("input[name=ucinkovina]").forEach(r => r.addEventListener("click", izracun));
+  $("tezaPremedikacijaId").addEventListener("input", izracun);
+  slider.addEventListener("input", izracun);
+})();
+</script>
+</body>
+</html>
